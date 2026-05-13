@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --navy: #0F172A;
+  --coral: #E8623A;
+  --teal: #0D9488;
+  --amber: #D97706;
+  --bg: #F8F7F4;
+  --bg3: #F1EFE8;
+  --border: #E2E0D8;
+}
+
+body { background: var(--bg); }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in { animation: fadeIn 0.2s ease-out; }
