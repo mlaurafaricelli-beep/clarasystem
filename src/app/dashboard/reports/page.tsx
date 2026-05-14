@@ -1,14 +1,12 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import type { Client, Approval, Agreement } from '@/types'
-import { Download, TrendingUp, CheckCircle, Clock, FileText } from 'lucide-react'
 
 export default function ReportsPage() {
-  const [clients, setClients] = useState<Client[]>([])
-  const [approvals, setApprovals] = useState<Approval[]>([])
-  const [agreements, setAgreements] = useState<Agreement[]>([])
-  const [selectedClientId, setSelectedClientId] = useState<string>('all')
+  const [clients, setClients] = useState<any[]>([])
+  const [approvals, setApprovals] = useState<any[]>([])
+  const [agreements, setAgreements] = useState<any[]>([])
+  const [selectedId, setSelectedId] = useState<string>('all')
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
@@ -17,160 +15,130 @@ export default function ReportsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const [cl, ap, ag] = await Promise.all([
-        supabase.from('clients').select('*').eq('agency_id', user.id).eq('status', 'active').order('name'),
+        supabase.from('clients').select('*').eq('agency_id', user.id).eq('status','active').order('name'),
         supabase.from('approvals').select('*').eq('agency_id', user.id),
         supabase.from('agreements').select('*').eq('agency_id', user.id),
       ])
       setClients(cl.data || [])
       setApprovals(ap.data || [])
       setAgreements(ag.data || [])
-      if (cl.data && cl.data.length > 0) setSelectedClientId(cl.data[0].id)
       setLoading(false)
     }
     load()
   }, [])
 
-  const clientApprovals = selectedClientId === 'all' ? approvals : approvals.filter(a => a.client_id === selectedClientId)
-  const clientAgreements = selectedClientId === 'all' ? agreements : agreements.filter(a => a.client_id === selectedClientId)
-  const selectedClient = clients.find(c => c.id === selectedClientId)
+  const ca = selectedId === 'all' ? approvals : approvals.filter(a => a.client_id === selectedId)
+  const total = ca.length
+  const approved = ca.filter(a => ['approved','revised'].includes(a.status)).length
+  const withChanges = agreements.filter(a => (selectedId === 'all' || a.client_id === selectedId) && a.action === 'changes_requested').length
+  const rate = total ? Math.round(approved/total*100) : 0
 
-  const total = clientApprovals.length
-  const approved = clientApprovals.filter(a => a.status === 'approved' || a.status === 'revised').length
-  const withChanges = clientAgreements.filter(a => a.action === 'changes_requested').length
-  const approvalRate = total ? Math.round(approved / total * 100) : 0
-
-  // Avg response time
-  const pendingHours = clientApprovals.filter(a => a.status === 'pending')
-    .map(a => Math.round((Date.now() - new Date(a.created_at).getTime()) / 3600000))
-  const avgHours = pendingHours.length ? Math.round(pendingHours.reduce((s, h) => s + h, 0) / pendingHours.length) : 0
-
-  // Monthly breakdown (last 5 months)
-  const months = Array.from({ length: 5 }, (_, i) => {
-    const d = new Date()
-    d.setMonth(d.getMonth() - (4 - i))
-    return { label: d.toLocaleDateString('es-AR', { month: 'short' }), month: d.getMonth(), year: d.getFullYear() }
+  const months = Array.from({length:5},(_,i) => {
+    const d = new Date(); d.setMonth(d.getMonth()-(4-i))
+    return { label: d.toLocaleDateString('es-AR',{month:'short'}), month: d.getMonth(), year: d.getFullYear() }
   })
-
-  const monthlyData = months.map(m => {
-    const items = clientApprovals.filter(a => {
-      const d = new Date(a.created_at)
-      return d.getMonth() === m.month && d.getFullYear() === m.year
-    })
+  const monthly = months.map(m => {
+    const items = ca.filter(a => { const d=new Date(a.created_at); return d.getMonth()===m.month && d.getFullYear()===m.year })
     return { ...m, total: items.length, approved: items.filter(a => ['approved','revised'].includes(a.status)).length }
   })
+  const maxBar = Math.max(...monthly.map(m => m.total), 1)
 
-  const maxBar = Math.max(...monthlyData.map(m => m.total), 1)
-
-  // Per-client stats
   const clientStats = clients.map(c => {
-    const ca = approvals.filter(a => a.client_id === c.id)
-    const ok = ca.filter(a => ['approved','revised'].includes(a.status)).length
-    return { client: c, total: ca.length, approved: ok, rate: ca.length ? Math.round(ok / ca.length * 100) : 0 }
-  }).sort((a, b) => b.total - a.total)
+    const a = approvals.filter(x => x.client_id === c.id)
+    const ok = a.filter(x => ['approved','revised'].includes(x.status)).length
+    return { client: c, total: a.length, approved: ok, rate: a.length ? Math.round(ok/a.length*100) : 0 }
+  }).sort((a,b) => b.total - a.total)
 
   function exportReport() {
-    const lines = [
-      `REPORTE AGENCYFLOW — ${selectedClient ? selectedClient.name : 'Todos los clientes'}`,
-      `Generado: ${new Date().toLocaleDateString('es-AR')}`,
-      '',
-      `Total de piezas: ${total}`,
-      `Aprobadas directas: ${approved}`,
-      `Tasa de aprobación: ${approvalRate}%`,
-      `Con cambios: ${withChanges}`,
-    ]
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+    const cl = clients.find(c => c.id === selectedId)
+    const lines = [`REPORTE CLARASYSTEM — ${cl ? cl.name : 'Todos los clientes'}`, `Generado: ${new Date().toLocaleDateString('es-AR')}`, '', `Total piezas: ${total}`, `Aprobadas: ${approved}`, `Tasa: ${rate}%`, `Con cambios: ${withChanges}`]
+    const blob = new Blob([lines.join('\n')],{type:'text/plain'})
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = 'reporte-agencyflow.txt'; a.click()
+    const a = document.createElement('a'); a.href=url; a.download='reporte.txt'; a.click()
   }
 
-  if (loading) return <div className="p-5 text-sm" style={{ color: 'var(--text2)' }}>Cargando reportes...</div>
+  const p = { padding: '20px', maxWidth: '960px', margin: '0 auto', fontFamily: 'system-ui,sans-serif' }
+  const card = { background: '#fff', border: '1px solid #E2E0D8', borderRadius: '12px', padding: '18px' }
+
+  if (loading) return <div style={{ padding: '40px', textAlign: 'center', color: '#94A3B8' }}>Cargando reportes...</div>
 
   return (
-    <div className="p-5 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-5">
+    <div style={p}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div>
-          <h1 className="text-xl font-bold">Reportes mensuales</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text2)' }}>Actividad y métricas por cliente</p>
+          <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>Reportes mensuales</h1>
+          <p style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>Actividad y métricas por cliente</p>
         </div>
-        <div className="flex gap-3 items-center">
-          <select value={selectedClientId} onChange={e => setSelectedClientId(e.target.value)}
-            className="px-3 py-2 rounded-xl border text-sm font-medium"
-            style={{ borderColor: 'var(--border)', background: 'white' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <select value={selectedId} onChange={e => setSelectedId(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E0D8', fontSize: '13px', fontFamily: 'system-ui,sans-serif', background: '#fff' }}>
             <option value="all">Todos los clientes</option>
             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <button onClick={exportReport}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium"
-            style={{ borderColor: 'var(--border)', color: 'var(--text2)' }}>
-            <Download size={14} /> Exportar
-          </button>
+          <button onClick={exportReport} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #E2E0D8', background: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 600, fontFamily: 'system-ui,sans-serif' }}>↓ Exportar</button>
         </div>
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '20px' }}>
         {[
-          { label: 'Piezas entregadas', value: total, icon: FileText, color: 'var(--coral)' },
-          { label: 'Aprobadas directas', value: approved, icon: CheckCircle, color: 'var(--green)' },
-          { label: 'Tasa de aprobación', value: `${approvalRate}%`, icon: TrendingUp, color: 'var(--teal)' },
-          { label: 'Tiempo resp. promedio', value: avgHours ? `${avgHours}h` : '—', icon: Clock, color: 'var(--amber)' },
-        ].map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="bg-white rounded-xl border p-4" style={{ borderColor: 'var(--border)' }}>
-            <div className="flex items-center gap-2 mb-2">
-              <Icon size={14} style={{ color }} />
-              <span className="text-xs font-medium" style={{ color: 'var(--text2)' }}>{label}</span>
-            </div>
-            <div className="text-2xl font-bold" style={{ color }}>{value}</div>
+          { label: 'Piezas entregadas', value: total, color: '#E8623A' },
+          { label: 'Aprobadas directas', value: approved, color: '#059669' },
+          { label: 'Tasa de aprobación', value: `${rate}%`, color: '#0D9488' },
+          { label: 'Con cambios', value: withChanges, color: '#D97706' },
+        ].map(k => (
+          <div key={k.label} style={{ background: '#fff', border: '1px solid #E2E0D8', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '6px' }}>{k.label}</div>
+            <div style={{ fontSize: '26px', fontWeight: 700, color: k.color }}>{k.value}</div>
           </div>
         ))}
       </div>
 
-      <div className="grid md:grid-cols-2 gap-5">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
         {/* Bar chart */}
-        <div className="bg-white rounded-xl border p-5" style={{ borderColor: 'var(--border)' }}>
-          <h3 className="font-bold text-sm mb-4">Piezas por mes</h3>
-          <div className="space-y-3">
-            {monthlyData.map(m => (
-              <div key={m.label} className="flex items-center gap-3">
-                <span className="text-xs w-8 text-right font-medium" style={{ color: 'var(--text2)' }}>{m.label}</span>
-                <div className="flex-1 relative h-7 rounded-lg overflow-hidden" style={{ background: 'var(--bg3)' }}>
-                  <div className="absolute left-0 top-0 bottom-0 rounded-lg transition-all"
-                    style={{ width: `${Math.round(m.total / maxBar * 100)}%`, background: 'var(--teal)', opacity: 0.3 }} />
-                  <div className="absolute left-0 top-0 bottom-0 rounded-lg transition-all"
-                    style={{ width: `${Math.round(m.approved / maxBar * 100)}%`, background: 'var(--teal)' }} />
-                </div>
-                <div className="text-xs w-12 text-right">
-                  <span className="font-bold" style={{ color: 'var(--teal)' }}>{m.approved}</span>
-                  <span style={{ color: 'var(--text3)' }}>/{m.total}</span>
-                </div>
+        <div style={card}>
+          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '16px' }}>Piezas por mes</h3>
+          {monthly.map(m => (
+            <div key={m.label} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              <span style={{ fontSize: '11px', color: '#64748B', width: '28px', textAlign: 'right', flexShrink: 0 }}>{m.label}</span>
+              <div style={{ flex: 1, height: '24px', background: '#F1EFE8', borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
+                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(m.total/maxBar*100)}%`, background: '#0D948840', borderRadius: '6px' }} />
+                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(m.approved/maxBar*100)}%`, background: '#0D9488', borderRadius: '6px' }} />
               </div>
-            ))}
-          </div>
-          <div className="flex gap-4 mt-4">
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm" style={{ background: 'var(--teal)' }} /><span className="text-xs" style={{ color: 'var(--text2)' }}>Aprobadas</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm" style={{ background: 'var(--teal)', opacity: 0.3 }} /><span className="text-xs" style={{ color: 'var(--text2)' }}>Total</span></div>
+              <span style={{ fontSize: '11px', width: '32px', textAlign: 'right', flexShrink: 0 }}>
+                <span style={{ fontWeight: 600, color: '#0D9488' }}>{m.approved}</span>
+                <span style={{ color: '#94A3B8' }}>/{m.total}</span>
+              </span>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: '16px', marginTop: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#0D9488' }} />
+              <span style={{ fontSize: '11px', color: '#64748B' }}>Aprobadas</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#0D948840' }} />
+              <span style={{ fontSize: '11px', color: '#64748B' }}>Total</span>
+            </div>
           </div>
         </div>
 
-        {/* Per-client ranking */}
-        <div className="bg-white rounded-xl border p-5" style={{ borderColor: 'var(--border)' }}>
-          <h3 className="font-bold text-sm mb-4">Ranking de clientes por piezas</h3>
+        {/* Per client */}
+        <div style={card}>
+          <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '16px' }}>Ranking de clientes</h3>
           {clientStats.length === 0 ? (
-            <div className="text-sm text-center py-8" style={{ color: 'var(--text3)' }}>Sin datos todavía</div>
-          ) : clientStats.map(({ client: c, total: t, approved: a, rate }) => (
-            <div key={c.id} className="mb-4">
-              <div className="flex items-center gap-2 mb-1.5">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                  style={{ background: c.avatar_color }}>
+            <div style={{ textAlign: 'center', padding: '32px', color: '#94A3B8', fontSize: '13px' }}>Sin datos todavía</div>
+          ) : clientStats.map(({ client: c, total: t, approved: a, rate: r }) => (
+            <div key={c.id} style={{ marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
+                <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: c.avatar_color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
                   {c.name[0]}
                 </div>
-                <span className="text-sm font-medium flex-1">{c.name}</span>
-                <span className="text-xs font-bold" style={{ color: rate >= 80 ? 'var(--green)' : rate >= 60 ? 'var(--amber)' : 'var(--red)' }}>{rate}%</span>
-                <span className="text-xs" style={{ color: 'var(--text2)' }}>{a}/{t} piezas</span>
+                <span style={{ fontSize: '13px', fontWeight: 500, flex: 1 }}>{c.name}</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: r >= 80 ? '#059669' : r >= 60 ? '#D97706' : '#DC2626' }}>{r}%</span>
+                <span style={{ fontSize: '11px', color: '#94A3B8' }}>{a}/{t}</span>
               </div>
-              <div className="h-2 rounded-full" style={{ background: 'var(--bg3)' }}>
-                <div className="h-full rounded-full transition-all"
-                  style={{ width: `${Math.round(t / Math.max(...clientStats.map(s => s.total), 1) * 100)}%`, background: c.avatar_color }} />
+              <div style={{ height: '6px', borderRadius: '3px', background: '#F1EFE8' }}>
+                <div style={{ height: '100%', borderRadius: '3px', width: `${clientStats.length ? Math.round(t/Math.max(...clientStats.map(s=>s.total),1)*100) : 0}%`, background: c.avatar_color }} />
               </div>
             </div>
           ))}

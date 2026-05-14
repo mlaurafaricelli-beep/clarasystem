@@ -1,18 +1,23 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import type { TeamMember, Task, Client } from '@/types'
-import { Plus, Trash2, CheckCircle, Clock, AlertTriangle } from 'lucide-react'
 
 const COLORS = ['#E8623A','#0D9488','#D97706','#2563EB','#7C3AED','#059669']
+const s = {
+  page: { padding: '20px', maxWidth: '960px', margin: '0 auto', fontFamily: 'system-ui,sans-serif' },
+  card: { background: '#fff', border: '1px solid #E2E0D8', borderRadius: '12px', padding: '16px' },
+  btn: { padding: '7px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 600, fontFamily: 'system-ui,sans-serif' },
+  input: { width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E0D8', fontSize: '13px', fontFamily: 'system-ui,sans-serif', outline: 'none', boxSizing: 'border-box' as any },
+  modal: { position: 'fixed' as any, inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '16px' },
+}
 
 export default function TeamPage() {
-  const [members, setMembers] = useState<TeamMember[]>([])
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [clients, setClients] = useState<Client[]>([])
+  const [members, setMembers] = useState<any[]>([])
+  const [tasks, setTasks] = useState<any[]>([])
+  const [clients, setClients] = useState<any[]>([])
   const [showAdd, setShowAdd] = useState(false)
-  const [showTask, setShowTask] = useState<string | null>(null)
-  const [form, setForm] = useState({ full_name: '', email: '', role: 'member' as 'admin' | 'member', avatar_color: '#E8623A' })
+  const [showTask, setShowTask] = useState<string|null>(null)
+  const [form, setForm] = useState({ full_name: '', email: '', role: 'member', avatar_color: '#E8623A' })
   const [taskForm, setTaskForm] = useState({ title: '', client_id: '', due_date: '', priority: 'normal' })
   const [toast, setToast] = useState('')
   const supabase = createClient()
@@ -23,11 +28,11 @@ export default function TeamPage() {
     const [m, t, c] = await Promise.all([
       supabase.from('team_members').select('*').eq('agency_id', user.id).order('full_name'),
       supabase.from('tasks').select('*, client:clients(name), assignee:team_members(full_name)').eq('agency_id', user.id).order('due_date'),
-      supabase.from('clients').select('id,name').eq('agency_id', user.id).eq('status', 'active').order('name'),
+      supabase.from('clients').select('id,name').eq('agency_id', user.id).eq('status','active').order('name'),
     ])
     setMembers(m.data || [])
     setTasks(t.data || [])
-    setClients((c.data as any) || [])
+    setClients(c.data || [])
   }
 
   useEffect(() => { load() }, [])
@@ -40,21 +45,16 @@ export default function TeamPage() {
     await supabase.from('team_members').insert({ ...form, agency_id: user.id })
     setShowAdd(false)
     setForm({ full_name: '', email: '', role: 'member', avatar_color: '#E8623A' })
-    load()
-    showToast('✓ Integrante agregado')
+    load(); showToast('✓ Integrante agregado')
   }
 
   async function assignTask(memberId: string) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || !taskForm.title) return
-    await supabase.from('tasks').insert({
-      ...taskForm, agency_id: user.id, assigned_to: memberId, status: 'pending',
-      client_id: taskForm.client_id || null, due_date: taskForm.due_date || null,
-    })
+    await supabase.from('tasks').insert({ ...taskForm, agency_id: user.id, assigned_to: memberId, status: 'pending', client_id: taskForm.client_id || null, due_date: taskForm.due_date || null })
     setShowTask(null)
     setTaskForm({ title: '', client_id: '', due_date: '', priority: 'normal' })
-    load()
-    showToast('✓ Tarea asignada')
+    load(); showToast('✓ Tarea asignada')
   }
 
   async function toggleTask(taskId: string, current: string) {
@@ -69,109 +69,84 @@ export default function TeamPage() {
     load()
   }
 
-  const statusIcon = { pending: Clock, in_progress: AlertTriangle, done: CheckCircle, cancelled: CheckCircle }
-  const statusColor = { pending: 'var(--text3)', in_progress: 'var(--amber)', done: 'var(--green)', cancelled: 'var(--text3)' }
-
   return (
-    <div className="p-5 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-5">
+    <div style={s.page}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div>
-          <h1 className="text-xl font-bold">Mi equipo</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text2)' }}>Asignaciones, tareas y rendimiento mensual</p>
+          <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>Mi equipo</h1>
+          <p style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>Asignaciones y rendimiento</p>
         </div>
-        <button onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold"
-          style={{ background: 'var(--coral)' }}>
-          <Plus size={15} /> Agregar integrante
+        <button onClick={() => setShowAdd(true)} style={{ ...s.btn, background: '#E8623A', color: '#fff', padding: '9px 18px', fontSize: '13px' }}>
+          + Agregar integrante
         </button>
       </div>
 
       {members.length === 0 ? (
-        <div className="text-center py-20">
-          <div className="text-4xl mb-3">👥</div>
-          <div className="font-semibold mb-1">Todavía no agregaste tu equipo</div>
-          <div className="text-sm mb-4" style={{ color: 'var(--text2)' }}>Agregá cada integrante y empezá a asignar tareas</div>
-          <button onClick={() => setShowAdd(true)}
-            className="px-4 py-2 rounded-xl text-white text-sm font-semibold"
-            style={{ background: 'var(--coral)' }}>
-            Agregar primer integrante
-          </button>
+        <div style={{ textAlign: 'center', padding: '80px', color: '#94A3B8' }}>
+          <div style={{ fontSize: '40px', marginBottom: '12px' }}>👥</div>
+          <div style={{ fontWeight: 600, marginBottom: '8px' }}>Todavía no agregaste tu equipo</div>
+          <button onClick={() => setShowAdd(true)} style={{ ...s.btn, background: '#E8623A', color: '#fff', padding: '10px 20px' }}>Agregar primer integrante</button>
         </div>
       ) : (
-        <div className="grid md:grid-cols-2 gap-4">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: '16px' }}>
           {members.map(m => {
-            const memberTasks = tasks.filter(t => t.assigned_to === m.id)
-            const done = memberTasks.filter(t => t.status === 'done').length
-            const late = memberTasks.filter(t => t.status !== 'done' && t.due_date && t.due_date < new Date().toISOString().split('T')[0]).length
-            const pct = memberTasks.length ? Math.round(done / memberTasks.length * 100) : 0
-
+            const mt = tasks.filter(t => t.assigned_to === m.id)
+            const done = mt.filter(t => t.status === 'done').length
+            const late = mt.filter(t => t.status !== 'done' && t.due_date && t.due_date < new Date().toISOString().split('T')[0]).length
+            const pct = mt.length ? Math.round(done/mt.length*100) : 0
             return (
-              <div key={m.id} className="bg-white rounded-xl border p-4" style={{ borderColor: 'var(--border)' }}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                    style={{ background: m.avatar_color }}>
-                    {m.full_name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase()}
+              <div key={m.id} style={s.card}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: m.avatar_color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                    {m.full_name.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase()}
                   </div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-sm">{m.full_name}</div>
-                    <div className="text-xs" style={{ color: 'var(--text2)' }}>{m.email} · {m.role === 'admin' ? 'Admin' : 'Miembro'}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600 }}>{m.full_name}</div>
+                    <div style={{ fontSize: '11px', color: '#94A3B8' }}>{m.email}</div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-bold text-lg">{done}<span className="text-xs font-normal" style={{ color: 'var(--text2)' }}>/{memberTasks.length}</span></div>
-                    <div className="text-xs" style={{ color: 'var(--text2)' }}>tareas</div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 700 }}>{done}<span style={{ fontSize: '12px', color: '#94A3B8', fontWeight: 400 }}>/{mt.length}</span></div>
+                    <div style={{ fontSize: '10px', color: '#94A3B8' }}>tareas</div>
                   </div>
-                  <button onClick={() => removeMember(m.id)} className="p-1 rounded" style={{ color: 'var(--text3)' }}>
-                    <Trash2 size={14} />
-                  </button>
+                  <button onClick={() => removeMember(m.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#CBD5E1', fontSize: '16px' }}>×</button>
                 </div>
 
-                {/* Progress */}
-                <div className="h-1.5 rounded-full mb-3" style={{ background: 'var(--bg3)' }}>
-                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: late > 0 ? 'var(--amber)' : 'var(--teal)' }} />
+                <div style={{ height: '6px', borderRadius: '3px', background: '#F1EFE8', marginBottom: '12px' }}>
+                  <div style={{ height: '100%', borderRadius: '3px', width: `${pct}%`, background: late > 0 ? '#D97706' : '#0D9488', transition: 'width .3s' }} />
                 </div>
 
-                {/* Tasks */}
-                <div className="space-y-1 mb-3 max-h-36 overflow-y-auto">
-                  {memberTasks.length === 0 ? (
-                    <div className="text-xs text-center py-2" style={{ color: 'var(--text3)' }}>Sin tareas asignadas</div>
-                  ) : memberTasks.slice(0, 6).map(t => {
-                    const Icon = statusIcon[t.status] || Clock
+                <div style={{ marginBottom: '10px', maxHeight: '140px', overflowY: 'auto' }}>
+                  {mt.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: '#94A3B8', textAlign: 'center', padding: '8px' }}>Sin tareas asignadas</div>
+                  ) : mt.slice(0,5).map(t => {
                     const isLate = t.status !== 'done' && t.due_date && t.due_date < new Date().toISOString().split('T')[0]
+                    const icon = t.status === 'done' ? '✓' : t.status === 'in_progress' ? '⟳' : '○'
                     return (
-                      <div key={t.id} className="flex items-center gap-2 py-1 cursor-pointer" onClick={() => toggleTask(t.id, t.status)}>
-                        <Icon size={13} style={{ color: isLate ? 'var(--red)' : statusColor[t.status], flexShrink: 0 }} />
-                        <span className="flex-1 text-xs truncate" style={{ textDecoration: t.status === 'done' ? 'line-through' : 'none', color: t.status === 'done' ? 'var(--text3)' : 'var(--text)' }}>{t.title}</span>
-                        {(t.client as any)?.name && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg3)', color: 'var(--text2)' }}>{(t.client as any).name}</span>}
-                        {isLate && <span className="text-xs font-bold" style={{ color: 'var(--red)' }}>Tarde</span>}
+                      <div key={t.id} onClick={() => toggleTask(t.id, t.status)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 0', borderBottom: '1px solid #F1EFE8', cursor: 'pointer' }}>
+                        <span style={{ color: t.status === 'done' ? '#059669' : isLate ? '#DC2626' : '#94A3B8', fontSize: '12px', flexShrink: 0 }}>{icon}</span>
+                        <span style={{ flex: 1, fontSize: '12px', textDecoration: t.status === 'done' ? 'line-through' : 'none', color: t.status === 'done' ? '#94A3B8' : '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+                        {(t.client as any)?.name && <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '10px', background: '#F1EFE8', color: '#64748B', flexShrink: 0 }}>{(t.client as any).name}</span>}
+                        {isLate && <span style={{ fontSize: '10px', fontWeight: 700, color: '#DC2626', flexShrink: 0 }}>tarde</span>}
                       </div>
                     )
                   })}
                 </div>
 
-                <button onClick={() => setShowTask(m.id)}
-                  className="w-full py-1.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1"
-                  style={{ borderColor: 'var(--border)', color: 'var(--text2)' }}>
-                  <Plus size={12} /> Asignar tarea
-                </button>
+                <button onClick={() => setShowTask(m.id)} style={{ ...s.btn, width: '100%', background: '#F1EFE8', color: '#475569' }}>+ Asignar tarea</button>
 
-                {/* Task form inline */}
                 {showTask === m.id && (
-                  <div className="mt-3 p-3 rounded-lg space-y-2" style={{ background: 'var(--bg3)' }}>
-                    <input value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))}
-                      placeholder="Nombre de la tarea"
-                      className="w-full px-2.5 py-1.5 rounded-lg border text-xs" style={{ borderColor: 'var(--border)', background: 'white' }} />
-                    <div className="grid grid-cols-2 gap-2">
-                      <select value={taskForm.client_id} onChange={e => setTaskForm(f => ({ ...f, client_id: e.target.value }))}
-                        className="px-2.5 py-1.5 rounded-lg border text-xs" style={{ borderColor: 'var(--border)', background: 'white' }}>
+                  <div style={{ marginTop: '10px', padding: '12px', background: '#F8F7F4', borderRadius: '8px' }}>
+                    <input value={taskForm.title} onChange={e => setTaskForm(f => ({...f, title: e.target.value}))} placeholder="Nombre de la tarea" style={{ ...s.input, marginBottom: '8px', fontSize: '12px' }} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                      <select value={taskForm.client_id} onChange={e => setTaskForm(f => ({...f, client_id: e.target.value}))} style={{ ...s.input, fontSize: '12px' }}>
                         <option value="">Sin cliente</option>
                         {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
-                      <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(f => ({ ...f, due_date: e.target.value }))}
-                        className="px-2.5 py-1.5 rounded-lg border text-xs" style={{ borderColor: 'var(--border)', background: 'white' }} />
+                      <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(f => ({...f, due_date: e.target.value}))} style={{ ...s.input, fontSize: '12px' }} />
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => setShowTask(null)} className="flex-1 py-1.5 rounded-lg text-xs border" style={{ borderColor: 'var(--border)' }}>Cancelar</button>
-                      <button onClick={() => assignTask(m.id)} className="flex-1 py-1.5 rounded-lg text-xs text-white font-semibold" style={{ background: 'var(--coral)' }}>Asignar</button>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => setShowTask(null)} style={{ ...s.btn, flex: 1, background: '#fff', border: '1px solid #E2E0D8', color: '#475569' }}>Cancelar</button>
+                      <button onClick={() => assignTask(m.id)} style={{ ...s.btn, flex: 1, background: '#E8623A', color: '#fff' }}>Asignar</button>
                     </div>
                   </div>
                 )}
@@ -181,61 +156,44 @@ export default function TeamPage() {
         </div>
       )}
 
-      {/* Add member modal */}
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)' }}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm border" style={{ borderColor: 'var(--border)' }}>
-            <h2 className="font-bold text-lg mb-4">Agregar integrante</h2>
-            <div className="space-y-3">
+        <div style={s.modal}>
+          <div style={{ background: '#fff', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '380px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '20px' }}>Agregar integrante</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
               <div>
-                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text2)' }}>Nombre completo</label>
-                <input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
-                  placeholder="Sofía Ruiz"
-                  className="w-full px-3 py-2 rounded-lg border text-sm" style={{ borderColor: 'var(--border)', background: 'var(--bg)' }} />
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '5px' }}>NOMBRE COMPLETO</label>
+                <input value={form.full_name} onChange={e => setForm(f => ({...f, full_name: e.target.value}))} placeholder="Sofía Ruiz" style={s.input} />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text2)' }}>Email</label>
-                <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                  placeholder="sofia@tuagencia.com"
-                  className="w-full px-3 py-2 rounded-lg border text-sm" style={{ borderColor: 'var(--border)', background: 'var(--bg)' }} />
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '5px' }}>EMAIL</label>
+                <input type="email" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))} placeholder="sofia@tuagencia.com" style={s.input} />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--text2)' }}>Rol</label>
-                <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value as any }))}
-                  className="w-full px-3 py-2 rounded-lg border text-sm" style={{ borderColor: 'var(--border)', background: 'var(--bg)' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '5px' }}>ROL</label>
+                <select value={form.role} onChange={e => setForm(f => ({...f, role: e.target.value}))} style={s.input}>
                   <option value="member">Miembro</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text2)' }}>Color</label>
-                <div className="flex gap-2">
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '8px' }}>COLOR</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
                   {COLORS.map(col => (
-                    <div key={col} onClick={() => setForm(f => ({ ...f, avatar_color: col }))}
-                      className="w-7 h-7 rounded-full cursor-pointer"
-                      style={{ background: col, outline: form.avatar_color === col ? '3px solid var(--navy)' : 'none', outlineOffset: '2px' }} />
+                    <div key={col} onClick={() => setForm(f => ({...f, avatar_color: col}))} style={{ width: '28px', height: '28px', borderRadius: '50%', background: col, cursor: 'pointer', outline: form.avatar_color === col ? '3px solid #0F172A' : 'none', outlineOffset: '2px' }} />
                   ))}
                 </div>
               </div>
             </div>
-            <div className="flex gap-3 mt-5">
-              <button onClick={() => setShowAdd(false)} className="flex-1 py-2.5 rounded-xl border text-sm" style={{ borderColor: 'var(--border)' }}>Cancelar</button>
-              <button onClick={addMember} disabled={!form.full_name || !form.email}
-                className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-50"
-                style={{ background: 'var(--coral)' }}>
-                Agregar
-              </button>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setShowAdd(false)} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #E2E0D8', background: '#fff', cursor: 'pointer', fontSize: '13px', fontFamily: 'system-ui,sans-serif' }}>Cancelar</button>
+              <button onClick={addMember} disabled={!form.full_name || !form.email} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#E8623A', color: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 600, fontFamily: 'system-ui,sans-serif', opacity: !form.full_name || !form.email ? 0.5 : 1 }}>Agregar</button>
             </div>
           </div>
         </div>
       )}
 
-      {toast && (
-        <div className="fixed bottom-5 right-5 px-4 py-3 rounded-xl text-white text-sm font-medium border-l-4 z-50"
-          style={{ background: 'var(--navy2)', borderColor: 'var(--teal)' }}>
-          {toast}
-        </div>
-      )}
+      {toast && <div style={{ position: 'fixed', bottom: '20px', right: '20px', background: '#1E293B', color: '#fff', padding: '12px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 500, borderLeft: '3px solid #14B8A6', zIndex: 99 }}>{toast}</div>}
     </div>
   )
 }
