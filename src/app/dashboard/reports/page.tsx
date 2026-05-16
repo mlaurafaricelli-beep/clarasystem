@@ -1,11 +1,11 @@
 'use client'
+import PlanGuard from '@/components/PlanGuard'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 
-export default function ReportsPage() {
+function ReportsContent() {
   const [clients, setClients] = useState<any[]>([])
   const [approvals, setApprovals] = useState<any[]>([])
-  const [agreements, setAgreements] = useState<any[]>([])
   const [selectedId, setSelectedId] = useState<string>('all')
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
@@ -14,14 +14,12 @@ export default function ReportsPage() {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const [cl, ap, ag] = await Promise.all([
+      const [cl, ap] = await Promise.all([
         supabase.from('clients').select('*').eq('agency_id', user.id).eq('status','active').order('name'),
         supabase.from('approvals').select('*').eq('agency_id', user.id),
-        supabase.from('agreements').select('*').eq('agency_id', user.id),
       ])
       setClients(cl.data || [])
       setApprovals(ap.data || [])
-      setAgreements(ag.data || [])
       setLoading(false)
     }
     load()
@@ -30,7 +28,6 @@ export default function ReportsPage() {
   const ca = selectedId === 'all' ? approvals : approvals.filter(a => a.client_id === selectedId)
   const total = ca.length
   const approved = ca.filter(a => ['approved','revised'].includes(a.status)).length
-  const withChanges = agreements.filter(a => (selectedId === 'all' || a.client_id === selectedId) && a.action === 'changes_requested').length
   const rate = total ? Math.round(approved/total*100) : 0
 
   const months = Array.from({length:5},(_,i) => {
@@ -49,42 +46,30 @@ export default function ReportsPage() {
     return { client: c, total: a.length, approved: ok, rate: a.length ? Math.round(ok/a.length*100) : 0 }
   }).sort((a,b) => b.total - a.total)
 
-  function exportReport() {
-    const cl = clients.find(c => c.id === selectedId)
-    const lines = [`REPORTE CLARASYSTEM — ${cl ? cl.name : 'Todos los clientes'}`, `Generado: ${new Date().toLocaleDateString('es-AR')}`, '', `Total piezas: ${total}`, `Aprobadas: ${approved}`, `Tasa: ${rate}%`, `Con cambios: ${withChanges}`]
-    const blob = new Blob([lines.join('\n')],{type:'text/plain'})
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href=url; a.download='reporte.txt'; a.click()
-  }
-
-  const p = { padding: '20px', maxWidth: '960px', margin: '0 auto', fontFamily: 'system-ui,sans-serif' }
   const card = { background: '#fff', border: '1px solid #E2E0D8', borderRadius: '12px', padding: '18px' }
 
-  if (loading) return <div style={{ padding: '40px', textAlign: 'center', color: '#94A3B8' }}>Cargando reportes...</div>
+  if (loading) return <div style={{ padding: '40px', textAlign: 'center', color: '#94A3B8' }}>Cargando...</div>
 
   return (
-    <div style={p}>
+    <div style={{ padding: '20px', maxWidth: '960px', margin: '0 auto', fontFamily: 'system-ui,sans-serif' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div>
           <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>Reportes mensuales</h1>
           <p style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>Actividad y métricas por cliente</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <select value={selectedId} onChange={e => setSelectedId(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E0D8', fontSize: '13px', fontFamily: 'system-ui,sans-serif', background: '#fff' }}>
-            <option value="all">Todos los clientes</option>
-            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <button onClick={exportReport} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #E2E0D8', background: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 600, fontFamily: 'system-ui,sans-serif' }}>↓ Exportar</button>
-        </div>
+        <select value={selectedId} onChange={e => setSelectedId(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E0D8', fontSize: '13px', fontFamily: 'system-ui,sans-serif', background: '#fff' }}>
+          <option value="all">Todos los clientes</option>
+          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
       </div>
 
-      {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '20px' }}>
         {[
           { label: 'Piezas entregadas', value: total, color: '#E8623A' },
-          { label: 'Aprobadas directas', value: approved, color: '#059669' },
-          { label: 'Tasa de aprobación', value: `${rate}%`, color: '#0D9488' },
-          { label: 'Con cambios', value: withChanges, color: '#D97706' },
+          { label: 'Aprobadas', value: approved, color: '#059669' },
+          { label: 'Tasa aprobación', value: `${rate}%`, color: '#0D9488' },
+          { label: 'Clientes activos', value: clients.length, color: '#7C3AED' },
         ].map(k => (
           <div key={k.label} style={{ background: '#fff', border: '1px solid #E2E0D8', borderRadius: '10px', padding: '14px' }}>
             <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '6px' }}>{k.label}</div>
@@ -94,7 +79,6 @@ export default function ReportsPage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-        {/* Bar chart */}
         <div style={card}>
           <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '16px' }}>Piezas por mes</h3>
           {monthly.map(m => (
@@ -104,25 +88,13 @@ export default function ReportsPage() {
                 <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(m.total/maxBar*100)}%`, background: '#0D948840', borderRadius: '6px' }} />
                 <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.round(m.approved/maxBar*100)}%`, background: '#0D9488', borderRadius: '6px' }} />
               </div>
-              <span style={{ fontSize: '11px', width: '32px', textAlign: 'right', flexShrink: 0 }}>
+              <span style={{ fontSize: '11px', width: '36px', textAlign: 'right' }}>
                 <span style={{ fontWeight: 600, color: '#0D9488' }}>{m.approved}</span>
                 <span style={{ color: '#94A3B8' }}>/{m.total}</span>
               </span>
             </div>
           ))}
-          <div style={{ display: 'flex', gap: '16px', marginTop: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#0D9488' }} />
-              <span style={{ fontSize: '11px', color: '#64748B' }}>Aprobadas</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#0D948840' }} />
-              <span style={{ fontSize: '11px', color: '#64748B' }}>Total</span>
-            </div>
-          </div>
         </div>
-
-        {/* Per client */}
         <div style={card}>
           <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '16px' }}>Ranking de clientes</h3>
           {clientStats.length === 0 ? (
@@ -130,9 +102,7 @@ export default function ReportsPage() {
           ) : clientStats.map(({ client: c, total: t, approved: a, rate: r }) => (
             <div key={c.id} style={{ marginBottom: '14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
-                <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: c.avatar_color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                  {c.name[0]}
-                </div>
+                <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: c.avatar_color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>{c.name[0]}</div>
                 <span style={{ fontSize: '13px', fontWeight: 500, flex: 1 }}>{c.name}</span>
                 <span style={{ fontSize: '12px', fontWeight: 700, color: r >= 80 ? '#059669' : r >= 60 ? '#D97706' : '#DC2626' }}>{r}%</span>
                 <span style={{ fontSize: '11px', color: '#94A3B8' }}>{a}/{t}</span>
@@ -145,5 +115,13 @@ export default function ReportsPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function ReportsPage() {
+  return (
+    <PlanGuard feature="reports">
+      <ReportsContent />
+    </PlanGuard>
   )
 }

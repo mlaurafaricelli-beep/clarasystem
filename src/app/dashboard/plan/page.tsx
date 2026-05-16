@@ -33,7 +33,7 @@ export default function PlanPage() {
 
   function contactLaura(planName: string) {
     const msg = encodeURIComponent(`Hola Laura! Quiero contratar el plan ${planName} de ClaraSystem. Mi agencia es: ${profile?.agency_name}`)
-    window.open(`https://wa.me/5491112345678?text=${msg}`, '_blank')
+    window.open(`https://wa.me/543584800823?text=${msg}`, '_blank')
   }
 
   if (loading) return <div style={{ padding: '40px', textAlign: 'center', color: '#94A3B8', fontFamily: 'system-ui,sans-serif' }}>Cargando...</div>

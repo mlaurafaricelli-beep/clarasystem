@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { canAddClient } from '@/lib/plan-limits'
 
 const COLORS = ['#E8623A','#0D9488','#D97706','#2563EB','#7C3AED','#059669','#DC2626','#0891B2']
 const SECTORS = ['Gastronomía','Diseño','Fitness','Real Estate','Salud','Educación','Moda','Tecnología','Retail','Otro']
@@ -18,25 +19,43 @@ const s = {
 
 export default function FichasPage() {
   const [clients, setClients] = useState<any[]>([])
+  const [profile, setProfile] = useState<any>(null)
   const [selected, setSelected] = useState<any>(null)
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState<any>({})
   const [showNew, setShowNew] = useState(false)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
+  const [limitMsg, setLimitMsg] = useState('')
   const supabase = createClient()
 
   async function load() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const { data } = await supabase.from('clients').select('*').eq('agency_id', user.id).order('name')
-    setClients(data || [])
-    if (data && data.length > 0 && !selected) setSelected(data[0])
+    const [{ data: prof }, { data: cl }] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', user.id).single(),
+      supabase.from('clients').select('*').eq('agency_id', user.id).order('name'),
+    ])
+    setProfile(prof)
+    setClients(cl || [])
+    if (cl && cl.length > 0 && !selected) setSelected(cl[0])
   }
 
   useEffect(() => { load() }, [])
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3000) }
+
+  function tryAddNew() {
+    if (!profile) return
+    if (!canAddClient(profile.plan, clients.length)) {
+      setLimitMsg(`Tu plan ${profile.plan} permite hasta ${profile.max_clients} clientes. Upgradeá para agregar más.`)
+      return
+    }
+    setLimitMsg('')
+    setForm({ avatar_color: '#E8623A', status: 'active', contacts: [] })
+    setShowNew(true)
+    setEditing(false)
+  }
 
   async function save() {
     setSaving(true)
@@ -66,18 +85,32 @@ export default function FichasPage() {
 
   return (
     <div style={s.page}>
-      {/* Client list */}
       <div style={s.sidebar}>
-        <div style={{ padding: '16px', borderBottom: '1px solid #E2E0D8', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
+        <div style={{ padding: '16px', borderBottom: '1px solid #E2E0D8' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
             <div style={{ fontSize: '14px', fontWeight: 700 }}>Clientes</div>
-            <div style={{ fontSize: '11px', color: '#94A3B8' }}>{clients.length} activos</div>
+            <button onClick={tryAddNew} style={{ ...s.btn, background: '#E8623A', color: '#fff', padding: '5px 10px', fontSize: '11px' }}>+ Nuevo</button>
           </div>
-          <button onClick={() => { setForm({ avatar_color: '#E8623A', status: 'active', contacts: [] }); setShowNew(true); setEditing(false) }}
-            style={{ ...s.btn, background: '#E8623A', color: '#fff', padding: '6px 12px', fontSize: '12px' }}>
-            + Nuevo
-          </button>
+          <div style={{ fontSize: '11px', color: '#94A3B8' }}>
+            {clients.length}/{profile?.max_clients || 3} clientes
+          </div>
+          {/* Limit bar */}
+          <div style={{ height: '4px', background: '#F1EFE8', borderRadius: '2px', marginTop: '6px' }}>
+            <div style={{ height: '100%', borderRadius: '2px', background: clients.length >= (profile?.max_clients||3) ? '#DC2626' : '#0D9488', width: `${Math.min(100, (clients.length/(profile?.max_clients||3))*100)}%`, transition: 'width .3s' }} />
+          </div>
         </div>
+
+        {/* Limit warning */}
+        {limitMsg && (
+          <div style={{ margin: '8px', padding: '10px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: '8px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: '#991B1B', marginBottom: '6px' }}>{limitMsg}</div>
+            <button onClick={() => { setLimitMsg(''); window.location.href='/dashboard/plan' }}
+              style={{ fontSize: '11px', fontWeight: 700, color: '#E8623A', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+              Ver planes →
+            </button>
+          </div>
+        )}
+
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
           {showNew && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '8px', background: 'rgba(232,98,58,0.08)', marginBottom: '4px' }}>
@@ -86,7 +119,7 @@ export default function FichasPage() {
             </div>
           )}
           {clients.map(c => (
-            <div key={c.id} onClick={() => { setSelected(c); setEditing(false); setShowNew(false) }}
+            <div key={c.id} onClick={() => { setSelected(c); setEditing(false); setShowNew(false); setLimitMsg('') }}
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '8px', marginBottom: '2px', cursor: 'pointer', background: selected?.id === c.id && !showNew ? '#F1EFE8' : 'transparent' }}>
               <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: c.avatar_color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
                 {c.name.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase()}
@@ -100,18 +133,15 @@ export default function FichasPage() {
         </div>
       </div>
 
-      {/* Detail */}
       <div style={s.main}>
         {!selected && !showNew ? (
           <div style={{ textAlign: 'center', paddingTop: '80px', color: '#94A3B8' }}>
             <div style={{ fontSize: '40px', marginBottom: '12px' }}>📋</div>
             <div style={{ fontWeight: 600, marginBottom: '8px' }}>Sin clientes todavía</div>
-            <button onClick={() => { setForm({ avatar_color: '#E8623A', status: 'active', contacts: [] }); setShowNew(true) }}
-              style={{ ...s.btn, background: '#E8623A', color: '#fff' }}>+ Agregar cliente</button>
+            <button onClick={tryAddNew} style={{ ...s.btn, background: '#E8623A', color: '#fff' }}>+ Agregar cliente</button>
           </div>
         ) : (
           <div style={{ maxWidth: '680px' }}>
-            {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' }}>
               {isEdit ? (
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -127,8 +157,7 @@ export default function FichasPage() {
               )}
               <div style={{ flex: 1 }}>
                 {isEdit ? (
-                  <input value={form.name || ''} onChange={e => setForm((f: any) => ({ ...f, name: e.target.value }))}
-                    placeholder="Nombre del cliente"
+                  <input value={form.name || ''} onChange={e => setForm((f: any) => ({ ...f, name: e.target.value }))} placeholder="Nombre del cliente"
                     style={{ ...s.input, fontSize: '18px', fontWeight: 700, borderColor: '#E8623A' }} />
                 ) : (
                   <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>{selected?.name}</h1>
@@ -136,25 +165,20 @@ export default function FichasPage() {
               </div>
               {!isEdit && selected && (
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={() => { setForm({ ...selected }); setEditing(true) }}
-                    style={{ ...s.btn, background: '#F1EFE8', color: '#475569' }}>✏️ Editar</button>
-                  <button onClick={() => del(selected.id)}
-                    style={{ ...s.btn, background: '#FEE2E2', color: '#991B1B' }}>🗑</button>
+                  <button onClick={() => { setForm({ ...selected }); setEditing(true) }} style={{ ...s.btn, background: '#F1EFE8', color: '#475569' }}>✏️ Editar</button>
+                  <button onClick={() => del(selected.id)} style={{ ...s.btn, background: '#FEE2E2', color: '#991B1B' }}>🗑</button>
                 </div>
               )}
               {isEdit && (
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={() => { setEditing(false); setShowNew(false) }}
-                    style={{ ...s.btn, background: '#F1F5F9', color: '#475569' }}>Cancelar</button>
-                  <button onClick={save} disabled={saving}
-                    style={{ ...s.btn, background: '#E8623A', color: '#fff', opacity: saving ? 0.6 : 1 }}>
+                  <button onClick={() => { setEditing(false); setShowNew(false) }} style={{ ...s.btn, background: '#F1F5F9', color: '#475569' }}>Cancelar</button>
+                  <button onClick={save} disabled={saving} style={{ ...s.btn, background: '#E8623A', color: '#fff', opacity: saving ? 0.6 : 1 }}>
                     {saving ? 'Guardando...' : '💾 Guardar'}
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Fields */}
             <div style={{ ...s.card, marginBottom: '16px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                 {[
@@ -182,7 +206,6 @@ export default function FichasPage() {
               </div>
 
               <div style={{ height: '1px', background: '#E2E0D8', margin: '16px 0' }} />
-
               <div style={{ fontSize: '11px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '14px' }}>Brief de marca</div>
 
               {[
@@ -202,7 +225,6 @@ export default function FichasPage() {
                 </div>
               ))}
 
-              {/* Contacts */}
               <div>
                 <label style={s.label}>Contactos</label>
                 {(isEdit ? form.contacts : selected?.contacts || [])?.map((ct: any, i: number) => (
