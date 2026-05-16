@@ -1,11 +1,5 @@
-import { createClient } from '@/lib/supabase'
-
-export const PLAN_FEATURES: Record<string, string[]> = {
-  esencial: ['dashboard','approvals','fichas','alerts','acuerdos','team'],
-  crecimiento: ['dashboard','approvals','fichas','alerts','acuerdos','team','reports','contract_alerts','history'],
-  agencia: ['dashboard','approvals','fichas','alerts','acuerdos','team','reports','contract_alerts','history','white_label','reports'],
-  estudio: ['dashboard','approvals','fichas','alerts','acuerdos','team','reports','contract_alerts','history','white_label','multi_brand','onboarding'],
-}
+// Todas las funciones están disponibles en todos los planes
+// La única diferencia es la cantidad de clientes y usuarios
 
 export const PLAN_LIMITS: Record<string, { clients: number; users: number }> = {
   esencial: { clients: 3, users: 3 },
@@ -15,7 +9,8 @@ export const PLAN_LIMITS: Record<string, { clients: number; users: number }> = {
 }
 
 export function hasFeature(plan: string, feature: string): boolean {
-  return (PLAN_FEATURES[plan] || PLAN_FEATURES.esencial).includes(feature)
+  // Todas las funciones disponibles en todos los planes
+  return true
 }
 
 export function canAddClient(plan: string, currentCount: number): boolean {
