@@ -1,37 +1,46 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
-import { Suspense } from 'react'
-
-const ADMIN_EMAIL = 'mlaurafaricelli@gmail.com'
+import { createBrowserClient } from '@supabase/ssr'
 
 function ResetForm() {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [loading, setLoading] = useState(false)
+  const [verifying, setVerifying] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
-  const [ready, setReady] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const supabase = createClient()
+
+  // Crear cliente directo con supabase-js (no SSR) para el reset
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
 
   useEffect(() => {
-    // Supabase envía el token como hash en la URL
-    // Necesitamos verificar la sesión del link de reset
-    async function verifySession() {
+    async function verify() {
       const code = searchParams.get('code')
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (error) {
-          setError('Link inválido o expirado. Pedí un nuevo link de recuperación.')
+      if (!code) {
+        setError('Link inválido. Pedí un nuevo link desde el login.')
+        setVerifying(false)
+        return
+      }
+      try {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error || !data.session) {
+          setError('Este link expiró o ya fue usado. Pedí un nuevo link.')
+          setVerifying(false)
           return
         }
+        setVerifying(false)
+      } catch (e) {
+        setError('Error al verificar el link. Intentá de nuevo.')
+        setVerifying(false)
       }
-      setReady(true)
     }
-    verifySession()
+    verify()
   }, [])
 
   async function handleReset(e: React.FormEvent) {
@@ -40,37 +49,45 @@ function ResetForm() {
     if (password.length < 6) { setError('Mínimo 6 caracteres'); return }
     setLoading(true)
     setError('')
+
     const { error } = await supabase.auth.updateUser({ password })
-    if (error) { setError(error.message); setLoading(false); return }
+    if (error) {
+      setError(error.message)
+      setLoading(false)
+      return
+    }
+
+    await supabase.auth.signOut()
     setSuccess(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    setTimeout(() => {
-      if (user?.email === ADMIN_EMAIL) {
-        router.push('/admin')
-      } else {
-        router.push('/dashboard')
-      }
-    }, 2000)
+    setTimeout(() => router.push('/auth'), 2500)
   }
 
-  const inp = { width: '100%', padding: '11px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)', background: '#0A0A0F', color: '#FFFFFF', fontSize: '14px', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as any }
-  const lbl = { display: 'block', fontSize: '11px', fontWeight: 700 as any, marginBottom: '6px', color: '#6A6A7A', textTransform: 'uppercase' as any, letterSpacing: '0.8px' }
+  const inp = {
+    width: '100%', padding: '11px 14px', borderRadius: '10px',
+    border: '1px solid rgba(255,255,255,0.08)', background: '#0A0A0F',
+    color: '#FFFFFF', fontSize: '14px', fontFamily: 'inherit',
+    outline: 'none', boxSizing: 'border-box' as any
+  }
+  const lbl = {
+    display: 'block', fontSize: '11px', fontWeight: 700 as any,
+    marginBottom: '6px', color: '#6A6A7A',
+    textTransform: 'uppercase' as any, letterSpacing: '0.8px'
+  }
 
-  if (error && !ready) return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: '48px', marginBottom: '16px' }}>❌</div>
-      <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Link inválido</h2>
-      <p style={{ fontSize: '13px', color: '#6A6A7A', marginBottom: '20px' }}>{error}</p>
-      <button onClick={() => router.push('/auth')}
-        style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 700, fontFamily: 'inherit', background: 'linear-gradient(135deg, #D4AF37, #F5D060)', color: '#0A0A0F' }}>
-        Volver al login
-      </button>
+  if (verifying) return (
+    <div style={{ textAlign: 'center', padding: '20px', color: '#6A6A7A', fontSize: '13px' }}>
+      Verificando link...
     </div>
   )
 
-  if (!ready) return (
-    <div style={{ textAlign: 'center', padding: '20px' }}>
-      <div style={{ fontSize: '13px', color: '#6A6A7A' }}>Verificando link...</div>
+  if (error && !password) return (
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ fontSize: '48px', marginBottom: '16px' }}>❌</div>
+      <p style={{ fontSize: '13px', color: '#FCA5A5', marginBottom: '20px' }}>{error}</p>
+      <button onClick={() => router.push('/auth')}
+        style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 700, fontFamily: 'inherit', background: 'linear-gradient(135deg,#D4AF37,#F5D060)', color: '#0A0A0F' }}>
+        Volver al login
+      </button>
     </div>
   )
 
@@ -78,7 +95,7 @@ function ResetForm() {
     <div style={{ textAlign: 'center' }}>
       <div style={{ fontSize: '48px', marginBottom: '16px' }}>✅</div>
       <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>¡Contraseña actualizada!</h2>
-      <p style={{ fontSize: '13px', color: '#6A6A7A' }}>Redirigiendo...</p>
+      <p style={{ fontSize: '13px', color: '#6A6A7A' }}>Yendo al login...</p>
     </div>
   )
 
@@ -102,7 +119,8 @@ function ResetForm() {
             {error}
           </div>
         )}
-        <button type="submit" disabled={loading} style={{ width: '100%', marginTop: '20px', padding: '13px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: 700, fontFamily: 'inherit', background: 'linear-gradient(135deg, #D4AF37, #F5D060)', color: '#0A0A0F', opacity: loading ? 0.6 : 1 }}>
+        <button type="submit" disabled={loading}
+          style={{ width: '100%', marginTop: '20px', padding: '13px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: 700, fontFamily: 'inherit', background: 'linear-gradient(135deg,#D4AF37,#F5D060)', color: '#0A0A0F', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'Guardando...' : 'Guardar contraseña →'}
         </button>
       </form>
