@@ -4,7 +4,8 @@ import { createClient } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
-const ADMIN_EMAIL = 'mlaurafaricelli@gmail.com'
+const SECRET_KEY = 'negociodelegable2025'
+
 const PLANS = ['esencial','crecimiento','agencia','estudio']
 const PLAN_PRICES: Record<string,number> = { esencial:19, crecimiento:39, agencia:69, estudio:129 }
 const PLAN_COLORS: Record<string,string> = { esencial:'#64748B', crecimiento:'#0D9488', agencia:'#E8623A', estudio:'#7C3AED' }
@@ -15,15 +16,10 @@ const PLAN_LIMITS: Record<string,any> = {
   estudio:{max_clients:25,max_users:999},
 }
 
-const s = {
-  btn: { padding:'7px 14px', borderRadius:'8px', border:'none', cursor:'pointer', fontSize:'12px', fontWeight:600, fontFamily:'system-ui,sans-serif' } as any,
-  input: { width:'100%', padding:'9px 12px', borderRadius:'8px', border:'1px solid #E2E0D8', fontSize:'13px', fontFamily:'system-ui,sans-serif', outline:'none', boxSizing:'border-box' as any },
-}
-
 export default function AdminPage() {
   const [agencies, setAgencies] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [isAdmin, setIsAdmin] = useState(false)
+  const [allowed, setAllowed] = useState(false)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<'all'|'trial'|'active'|'inactive'>('all')
   const [editingId, setEditingId] = useState<string|null>(null)
@@ -38,13 +34,20 @@ export default function AdminPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user || user.email !== ADMIN_EMAIL) { window.location.href='/dashboard'; return }
-      setIsAdmin(true)
-      await loadAgencies()
+    // Verificar key secreta en URL
+    const params = new URLSearchParams(window.location.search)
+    const key = params.get('key')
+    if (key === SECRET_KEY) {
+      // Guardar en sessionStorage para no tener que poner la key cada vez
+      sessionStorage.setItem('admin_access', SECRET_KEY)
     }
-    load()
+    const stored = sessionStorage.getItem('admin_access')
+    if (stored === SECRET_KEY) {
+      setAllowed(true)
+      loadAgencies()
+    } else {
+      window.location.href = '/dashboard'
+    }
   }, [])
 
   async function loadAgencies() {
@@ -65,7 +68,7 @@ export default function AdminPage() {
     await supabase.from('profiles').update({ plan, ...PLAN_LIMITS[plan] }).eq('id', agencyId)
     setAgencies(prev => prev.map(a => a.id === agencyId ? { ...a, plan, ...PLAN_LIMITS[plan] } : a))
     setEditingId(null)
-    showToast(`✓ Plan actualizado a ${plan}`)
+    showToast('✓ Plan actualizado a ' + plan)
   }
 
   async function extendTrial(agencyId: string) {
@@ -79,41 +82,29 @@ export default function AdminPage() {
     if (!msgText.trim() || !msgAgency) return
     setSending(true)
     try {
-      const apiKey = process.env.NEXT_PUBLIC_RESEND_KEY
-      await fetch('https://api.resend.com/emails', {
+      await fetch('/api/approvals/notify', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${process.env.NEXT_PUBLIC_RESEND_KEY}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          from: 'Laura de ClaraSystem <onboarding@resend.dev>',
-          to: [msgAgency.email],
-          subject: 'Mensaje de Laura — ClaraSystem',
-          html: `<div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 16px">
-            <div style="background:#0A0A0F;border-radius:12px 12px 0 0;padding:20px;text-align:center">
-              <div style="font-size:20px;font-weight:800;color:#fff">Clara<span style="color:#D4AF37">System</span></div>
-            </div>
-            <div style="background:#fff;padding:28px;border:1px solid #E2E0D8;border-top:none;border-radius:0 0 12px 12px">
-              <p style="font-size:14px;font-weight:600;margin:0 0 12px">Hola ${msgAgency.full_name || msgAgency.agency_name} 👋</p>
-              <p style="font-size:14px;color:#475569;line-height:1.7;white-space:pre-wrap">${msgText}</p>
-              <div style="margin-top:24px;padding-top:16px;border-top:1px solid #E2E0D8;font-size:12px;color:#94A3B8">
-                Laura · Negocio Delegable · ClaraSystem
-              </div>
-            </div>
-          </div>`,
+          clientEmail: msgAgency.email,
+          clientName: msgAgency.full_name || msgAgency.agency_name,
+          pieceName: msgText,
+          pieceType: 'Mensaje de Laura',
+          approvalToken: 'mensaje-directo',
         }),
       })
-      showToast(`✓ Mensaje enviado a ${msgAgency.email}`)
+      showToast('✓ Mensaje enviado a ' + msgAgency.email)
       setMsgAgency(null)
       setMsgText('')
     } catch(e) {
-      showToast('Error al enviar — verificá la API key de Resend')
+      showToast('Error al enviar')
     }
     setSending(false)
   }
 
-  async function registerPayment() {
+  function registerPayment() {
     if (!paymentAmount || !paymentAgency) return
-    const note = `Pago registrado: USD ${paymentAmount} — ${paymentNote || 'Sin nota'} — ${new Date().toLocaleDateString('es-AR')}`
-    showToast(`✓ Pago de USD ${paymentAmount} registrado para ${paymentAgency.agency_name}`)
+    showToast('✓ Pago de USD ' + paymentAmount + ' registrado para ' + paymentAgency.agency_name)
     setPaymentAgency(null)
     setPaymentAmount('')
     setPaymentNote('')
@@ -135,32 +126,31 @@ export default function AdminPage() {
   const paying = agencies.filter(a => a.plan !== 'esencial').length
   const expired = agencies.filter(a => new Date(a.trial_ends_at) < now && a.plan === 'esencial').length
 
-  if (!isAdmin) return <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0A0A0F', color:'#fff', fontFamily:'system-ui,sans-serif' }}>Verificando acceso...</div>
+  const btn = { padding:'7px 14px', borderRadius:'8px', border:'none', cursor:'pointer', fontSize:'12px', fontWeight:600, fontFamily:'system-ui,sans-serif' } as any
+  const inp = { width:'100%', padding:'9px 12px', borderRadius:'8px', border:'1px solid #E2E0D8', fontSize:'13px', fontFamily:'system-ui,sans-serif', outline:'none', boxSizing:'border-box' as any }
+
+  if (!allowed) return <div style={{ minHeight:'100vh', background:'#0A0A0F', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontFamily:'system-ui,sans-serif' }}>Verificando...</div>
 
   return (
     <div style={{ minHeight:'100vh', background:'#F8F7F4', fontFamily:'system-ui,sans-serif' }}>
-
-      {/* Topbar */}
       <div style={{ background:'#0A0A0F', borderBottom:'1px solid rgba(212,175,55,0.15)', padding:'12px 24px', display:'flex', alignItems:'center', gap:'12px', position:'sticky', top:0, zIndex:10 }}>
         <div style={{ fontSize:'18px', fontWeight:800, color:'#fff' }}>Clara<span style={{ color:'#D4AF37' }}>System</span></div>
         <span style={{ background:'#D4AF37', color:'#0A0A0F', fontSize:'10px', fontWeight:700, padding:'2px 8px', borderRadius:'20px' }}>ADMIN</span>
         <div style={{ fontSize:'12px', color:'#4A4A5A', marginLeft:'4px' }}>Panel de Laura · Negocio Delegable</div>
         <div style={{ marginLeft:'auto', display:'flex', gap:'8px' }}>
-          <button onClick={loadAgencies} style={{ ...s.btn, background:'rgba(255,255,255,0.05)', color:'#64748B' }}>⟳ Actualizar</button>
-          <button onClick={async()=>{ await supabase.auth.signOut(); window.location.href='/auth' }} style={{ ...s.btn, background:'rgba(255,255,255,0.05)', color:'#64748B' }}>Salir</button>
+          <button onClick={loadAgencies} style={{ ...btn, background:'rgba(255,255,255,0.05)', color:'#64748B' }}>⟳ Actualizar</button>
+          <button onClick={()=>{ sessionStorage.removeItem('admin_access'); window.location.href='/auth' }} style={{ ...btn, background:'rgba(255,255,255,0.05)', color:'#64748B' }}>Salir</button>
         </div>
       </div>
 
       <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'20px' }}>
-
-        {/* KPIs */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:'12px', marginBottom:'20px' }}>
           {[
             { label:'Agencias totales', value:agencies.length, color:'#E8623A' },
             { label:'En trial', value:onTrial, color:'#D97706' },
             { label:'Pagando', value:paying, color:'#059669' },
             { label:'Trial vencido', value:expired, color:'#DC2626' },
-            { label:'MRR estimado', value:`USD ${totalMRR}`, color:'#7C3AED' },
+            { label:'MRR estimado', value:'USD '+totalMRR, color:'#7C3AED' },
           ].map(k => (
             <div key={k.label} style={{ background:'#fff', border:'1px solid #E2E0D8', borderRadius:'10px', padding:'14px' }}>
               <div style={{ fontSize:'10px', color:'#64748B', marginBottom:'4px' }}>{k.label}</div>
@@ -169,7 +159,6 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {/* Filters */}
         <div style={{ display:'flex', gap:'10px', marginBottom:'14px', flexWrap:'wrap' }}>
           <div style={{ flex:1, minWidth:'200px', display:'flex', alignItems:'center', gap:'8px', background:'#fff', border:'1px solid #E2E0D8', borderRadius:'8px', padding:'8px 12px' }}>
             <span style={{ color:'#94A3B8' }}>🔍</span>
@@ -177,20 +166,20 @@ export default function AdminPage() {
           </div>
           <div style={{ display:'flex', border:'1px solid #E2E0D8', borderRadius:'8px', overflow:'hidden' }}>
             {(['all','trial','active','inactive'] as const).map((t,i) => (
-              <button key={t} onClick={()=>setTab(t)} style={{ ...s.btn, borderRadius:0, background:tab===t?'#0A0A0F':'#fff', color:tab===t?'#D4AF37':'#64748B' }}>
+              <button key={t} onClick={()=>setTab(t)} style={{ ...btn, borderRadius:0, background:tab===t?'#0A0A0F':'#fff', color:tab===t?'#D4AF37':'#64748B' }}>
                 {['Todas','En trial','Activas','Vencidas'][i]}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Table */}
         {loading ? (
           <div style={{ textAlign:'center', padding:'40px', color:'#94A3B8' }}>Cargando agencias...</div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign:'center', padding:'60px', color:'#94A3B8' }}>
             <div style={{ fontSize:'40px', marginBottom:'12px' }}>🏢</div>
             <div>Sin agencias todavía</div>
+            <div style={{ fontSize:'13px', marginTop:'8px', color:'#64748B' }}>Cuando las dueñas se registren van a aparecer acá</div>
           </div>
         ) : (
           <div style={{ background:'#fff', border:'1px solid #E2E0D8', borderRadius:'12px', overflow:'hidden' }}>
@@ -201,7 +190,7 @@ export default function AdminPage() {
             </div>
             {filtered.map(a => {
               const trialEnd = new Date(a.trial_ends_at)
-              const expired = trialEnd < now
+              const isExpired = trialEnd < now
               const daysLeft = Math.round((trialEnd.getTime()-now.getTime())/86400000)
               return (
                 <div key={a.id} style={{ display:'grid', gridTemplateColumns:'2fr 1.5fr 1fr 0.8fr 0.8fr 0.8fr 2fr', padding:'11px 16px', borderBottom:'1px solid #F1EFE8', alignItems:'center' }}>
@@ -217,14 +206,14 @@ export default function AdminPage() {
                         {PLANS.map(p=><option key={p} value={p}>{p}</option>)}
                       </select>
                     ) : (
-                      <span style={{ fontSize:'11px', fontWeight:700, padding:'2px 8px', borderRadius:'20px', background:`${PLAN_COLORS[a.plan]}18`, color:PLAN_COLORS[a.plan] }}>
+                      <span style={{ fontSize:'11px', fontWeight:700, padding:'2px 8px', borderRadius:'20px', background:PLAN_COLORS[a.plan]+'18', color:PLAN_COLORS[a.plan] }}>
                         {a.plan}
                       </span>
                     )}
                   </div>
                   <div style={{ fontSize:'12px' }}><span style={{ fontWeight:700 }}>{a.client_count}</span><span style={{ color:'#94A3B8' }}>/{a.max_clients}</span></div>
                   <div>
-                    {expired
+                    {isExpired
                       ? <span style={{ fontSize:'11px', fontWeight:700, color:'#DC2626' }}>Vencido</span>
                       : <span style={{ fontSize:'11px', fontWeight:700, color:daysLeft<=3?'#DC2626':'#D97706' }}>{daysLeft}d</span>
                     }
@@ -233,10 +222,10 @@ export default function AdminPage() {
                     {format(new Date(a.created_at),'dd MMM yy',{locale:es})}
                   </div>
                   <div style={{ display:'flex', gap:'5px', flexWrap:'wrap' }}>
-                    <button onClick={()=>{setEditingId(a.id);setEditPlan(a.plan)}} style={{ ...s.btn, background:'#F1EFE8', color:'#475569', padding:'5px 8px', fontSize:'11px' }}>✏️ Plan</button>
-                    <button onClick={()=>extendTrial(a.id)} style={{ ...s.btn, background:'#FEF3C7', color:'#92400E', padding:'5px 8px', fontSize:'11px' }}>+14d</button>
-                    <button onClick={()=>{setMsgAgency(a);setMsgText('')}} style={{ ...s.btn, background:'#DBEAFE', color:'#1E40AF', padding:'5px 8px', fontSize:'11px' }}>✉️</button>
-                    <button onClick={()=>{setPaymentAgency(a);setPaymentAmount('');setPaymentNote('')}} style={{ ...s.btn, background:'#D1FAE5', color:'#065F46', padding:'5px 8px', fontSize:'11px' }}>💰</button>
+                    <button onClick={()=>{setEditingId(a.id);setEditPlan(a.plan)}} style={{ ...btn, background:'#F1EFE8', color:'#475569', padding:'5px 8px', fontSize:'11px' }}>✏️ Plan</button>
+                    <button onClick={()=>extendTrial(a.id)} style={{ ...btn, background:'#FEF3C7', color:'#92400E', padding:'5px 8px', fontSize:'11px' }}>+14d</button>
+                    <button onClick={()=>{setMsgAgency(a);setMsgText('')}} style={{ ...btn, background:'#DBEAFE', color:'#1E40AF', padding:'5px 8px', fontSize:'11px' }}>✉️</button>
+                    <button onClick={()=>{setPaymentAgency(a);setPaymentAmount('');setPaymentNote('')}} style={{ ...btn, background:'#D1FAE5', color:'#065F46', padding:'5px 8px', fontSize:'11px' }}>💰</button>
                   </div>
                 </div>
               )
@@ -244,7 +233,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Revenue breakdown */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'10px', marginTop:'16px' }}>
           {PLANS.map(plan => {
             const count = agencies.filter(a=>a.plan===plan).length
@@ -259,26 +247,24 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Message modal */}
       {msgAgency && (
         <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50, padding:'16px' }}>
           <div style={{ background:'#fff', borderRadius:'16px', padding:'24px', width:'100%', maxWidth:'440px' }}>
             <h2 style={{ fontSize:'18px', fontWeight:700, marginBottom:'6px' }}>✉️ Enviar mensaje</h2>
             <p style={{ fontSize:'13px', color:'#64748B', marginBottom:'16px' }}>Para: <strong>{msgAgency.agency_name}</strong> · {msgAgency.email}</p>
             <textarea value={msgText} onChange={e=>setMsgText(e.target.value)}
-              placeholder="Escribí tu mensaje acá... por ejemplo: Hola! Vi que tu trial vence en 3 días. Cuando quieras te cuento cómo seguir usando ClaraSystem 😊"
-              rows={5} style={{ ...s.input, resize:'none', marginBottom:'16px' }} />
+              placeholder="Escribí tu mensaje acá..."
+              rows={5} style={{ ...inp, resize:'none', marginBottom:'16px' }} />
             <div style={{ display:'flex', gap:'10px' }}>
               <button onClick={()=>setMsgAgency(null)} style={{ flex:1, padding:'10px', borderRadius:'8px', border:'1px solid #E2E0D8', background:'#fff', cursor:'pointer', fontSize:'13px', fontFamily:'system-ui,sans-serif' }}>Cancelar</button>
               <button onClick={sendMessage} disabled={sending||!msgText.trim()} style={{ flex:1, padding:'10px', borderRadius:'8px', border:'none', background:'#0A0A0F', color:'#D4AF37', cursor:'pointer', fontSize:'13px', fontWeight:700, fontFamily:'system-ui,sans-serif', opacity:sending||!msgText.trim()?0.5:1 }}>
-                {sending?'Enviando...':'Enviar mensaje →'}
+                {sending?'Enviando...':'Enviar →'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Payment modal */}
       {paymentAgency && (
         <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50, padding:'16px' }}>
           <div style={{ background:'#fff', borderRadius:'16px', padding:'24px', width:'100%', maxWidth:'380px' }}>
@@ -286,16 +272,16 @@ export default function AdminPage() {
             <p style={{ fontSize:'13px', color:'#64748B', marginBottom:'16px' }}>{paymentAgency.agency_name} · Plan {paymentAgency.plan}</p>
             <div style={{ marginBottom:'12px' }}>
               <label style={{ display:'block', fontSize:'11px', fontWeight:700, color:'#64748B', marginBottom:'5px' }}>MONTO (USD)</label>
-              <input type="number" value={paymentAmount} onChange={e=>setPaymentAmount(e.target.value)} placeholder={String(PLAN_PRICES[paymentAgency.plan])} style={s.input} />
+              <input type="number" value={paymentAmount} onChange={e=>setPaymentAmount(e.target.value)} placeholder={String(PLAN_PRICES[paymentAgency.plan])} style={inp} />
             </div>
             <div style={{ marginBottom:'16px' }}>
               <label style={{ display:'block', fontSize:'11px', fontWeight:700, color:'#64748B', marginBottom:'5px' }}>NOTA (opcional)</label>
-              <input value={paymentNote} onChange={e=>setPaymentNote(e.target.value)} placeholder="Ej: Transferencia Mayo 2025" style={s.input} />
+              <input value={paymentNote} onChange={e=>setPaymentNote(e.target.value)} placeholder="Ej: Transferencia Mayo 2025" style={inp} />
             </div>
             <div style={{ display:'flex', gap:'10px' }}>
               <button onClick={()=>setPaymentAgency(null)} style={{ flex:1, padding:'10px', borderRadius:'8px', border:'1px solid #E2E0D8', background:'#fff', cursor:'pointer', fontSize:'13px', fontFamily:'system-ui,sans-serif' }}>Cancelar</button>
               <button onClick={registerPayment} disabled={!paymentAmount} style={{ flex:1, padding:'10px', borderRadius:'8px', border:'none', background:'#059669', color:'#fff', cursor:'pointer', fontSize:'13px', fontWeight:700, fontFamily:'system-ui,sans-serif', opacity:!paymentAmount?0.5:1 }}>
-                Registrar pago ✓
+                Registrar ✓
               </button>
             </div>
           </div>
